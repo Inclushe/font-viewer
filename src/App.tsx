@@ -1,17 +1,25 @@
 import React from "react";
 import opentype from "opentype.js";
 import "./App.css";
+import FontControlProvider from "./components/FontControlProvider";
+import Font from "./components/Font";
+import FontGroup from "./components/FontGroup";
+import TextInput from "./components/TextInput";
 
 const SUPPORTED_FILE_TYPES = ["ttf", "otf", "woff", "woff2"];
 
 /*
-- Handle some fonts not loading
-- Skip ones that throw errors
-- Fold font names
-- Sort by alphabetical order
-- Input custom text
+- [x] Handle some fonts not loading
+	- opentype.js can render fonts that are not supported by the browser somehow
+	- https://opentype.js.org/font-inspector.html
+	- window.font.draw (canvas)
+- [x] Fold font names
+- [x] Sort by alphabetical order
+- [x] Input custom text
 - Fix typescript errors
 - Have it work without File System Access API anyway?
+- Fallback to canvas opentype.js rendering for fonts that don't load correctly?
+- Handle malformed fonts
 */
 
 async function findFilesInSystemDirectory(dir: FileSystemDirectoryHandle) {
@@ -30,6 +38,15 @@ async function findFilesInSystemDirectory(dir: FileSystemDirectoryHandle) {
 
 function App() {
 	const [fontFiles, setFontFiles] = React.useState([]);
+	// Group fonts by family name under font.opentype.names.fontFamily
+	let fontFilesByGroup = new Map();
+	for (const fontFile of fontFiles) {
+		const fontFamily = fontFile.opentype?.names?.fontFamily?.en;
+		if (!fontFilesByGroup.has(fontFamily)) {
+			fontFilesByGroup.set(fontFamily, []);
+		}
+		fontFilesByGroup.get(fontFamily).push(fontFile);
+	}
 	const [fontStyleElement, setFontStyleElement] =
 		React.useState<HTMLStyleElement | null>(null);
 	React.useEffect(() => {
@@ -117,27 +134,32 @@ function App() {
 		console.log("files", currentFontFileHandles);
 	}
 
+	console.log(fontFilesByGroup.keys());
+
 	return (
-		<div className="p-4">
-			<button
-				onClick={requestDirectory}
-				className="bg-gray-200 p-4 rounded-lg border border-gray-400"
-				type="button"
-			>
-				Open Font Directory
-			</button>
-			{fontFiles.map((fontFile) => (
-				<p
-					key={fontFile.name}
-					style={{
-						fontFamily: `"${fontFile.name}", sans-serif`,
-					}}
+		<FontControlProvider>
+			<div className="p-4 relative">
+				<button
+					onClick={requestDirectory}
+					className="bg-gray-200 p-4 rounded-lg border border-gray-400"
+					type="button"
 				>
-					{console.log(fontFile)}
-					{fontFile.opentype?.names?.fullName?.en} - {fontFile.name}
-				</p>
-			))}
-		</div>
+					Open Font Directory
+				</button>
+				<div className="sticky top-0 bg-white">
+					<TextInput />
+				</div>
+				{[...fontFilesByGroup.keys()]
+					.sort((a, b) => String(a[0]).localeCompare(b[0]))
+					.map((fontFamily) => (
+						<FontGroup
+							fontName={fontFamily}
+							fontFiles={fontFilesByGroup.get(fontFamily)}
+							key={fontFamily}
+						/>
+					))}
+			</div>
+		</FontControlProvider>
 	);
 }
 
