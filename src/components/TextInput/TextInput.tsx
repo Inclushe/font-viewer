@@ -8,7 +8,8 @@ function TextInput() {
 			<input
 				type="text"
 				value={sampleText}
-				className="p-2 my-4 rounded-lg bg-gray-100 border border-gray-200 w-full overflow-hidden"
+				className="p-2 my-4 rounded-lg bg-gray-700 border border-gray-600 w-full overflow-hidden text-white"
+				placeholder="Enter preview text"
 				onChange={(event) => {
 					setSampleText(event.target.value);
 				}}

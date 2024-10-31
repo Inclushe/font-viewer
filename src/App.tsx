@@ -5,6 +5,11 @@ import FontControlProvider from "./components/FontControlProvider";
 import Font from "./components/Font";
 import FontGroup from "./components/FontGroup";
 import TextInput from "./components/TextInput";
+import DropZone from "./components/DropZone";
+import {
+	requestDirectoryFS,
+	requestFilesFromDropzone,
+} from "./helpers/fileHelpers";
 
 const SUPPORTED_FILE_TYPES = ["ttf", "otf", "woff", "woff2"];
 
@@ -18,23 +23,10 @@ const SUPPORTED_FILE_TYPES = ["ttf", "otf", "woff", "woff2"];
 - [x] Input custom text
 - Fix typescript errors
 - Have it work without File System Access API anyway?
+	- Add notice that it doesn't work in Firefox
 - Fallback to canvas opentype.js rendering for fonts that don't load correctly?
-- Handle malformed fonts
+	- https://developer.mozilla.org/en-US/docs/Web/API/CSS_Font_Loading_API
 */
-
-async function findFilesInSystemDirectory(dir: FileSystemDirectoryHandle) {
-	const files: FileSystemFileHandle[] = [];
-	for await (const entry of dir.values()) {
-		if (entry.kind === "file") {
-			files.push(entry);
-		} else if (entry.kind === "directory") {
-			const currentDir: FileSystemDirectoryHandle = entry;
-			const filesInDir = await findFilesInSystemDirectory(currentDir);
-			files.push(...filesInDir);
-		}
-	}
-	return files;
-}
 
 function App() {
 	const [fontFiles, setFontFiles] = React.useState([]);
@@ -49,6 +41,7 @@ function App() {
 	}
 	const [fontStyleElement, setFontStyleElement] =
 		React.useState<HTMLStyleElement | null>(null);
+
 	React.useEffect(() => {
 		let styleElement = fontStyleElement;
 		if (fontStyleElement === null) {
@@ -56,7 +49,6 @@ function App() {
 			styleElement.setAttribute("data-react-font-viewer", "");
 			document.head.appendChild(styleElement);
 			setFontStyleElement(styleElement);
-			console.log(styleElement);
 		}
 		let fontStyleString = "";
 		for (const fontFile of fontFiles) {
@@ -86,7 +78,6 @@ function App() {
 					(done) => (window.Module = { onRuntimeInitialized: done }),
 				);
 				await loadScript(path).then(() => {
-					console.log(init);
 					init;
 				});
 			}
@@ -95,58 +86,28 @@ function App() {
 	}, []);
 
 	async function requestDirectory() {
-		const directoryHandle = await window.showDirectoryPicker();
-		const currentFontFileHandles =
-			await findFilesInSystemDirectory(directoryHandle);
-		const currentFontFiles = [];
-		for (const fontFileHandle of currentFontFileHandles) {
-			// If file type is not supported, skip
-			const fileType = fontFileHandle.name
-				.split(".")
-				.pop()
-				?.toLocaleLowerCase();
-			if (!SUPPORTED_FILE_TYPES.includes(fileType)) {
-				continue;
-			}
-			// Get font info from opentype.js
-			const fontFile = await fontFileHandle.getFile();
-			console.log(fontFile);
-			let font = null;
-			if (fileType === "woff2") {
-				const fileBuffer = await fontFile.arrayBuffer();
-				console.log(fileBuffer);
-				// console.log(Module.decompress(fileBuffer));
-				font = opentype.parse(
-					Uint8Array.from(Module.decompress(fileBuffer)).buffer,
-				);
-			} else {
-				font = opentype.parse(await fontFile.arrayBuffer());
-			}
-			console.log(fontFile.name, font);
-			currentFontFiles.push({
-				file: fontFile,
-				name: fontFile.name,
-				opentype: font,
-			});
-		}
+		const currentFontFiles = await requestDirectoryFS();
 		setFontFiles(currentFontFiles);
-		console.log(directoryHandle);
-		console.log("files", currentFontFileHandles);
 	}
 
-	console.log(fontFilesByGroup.keys());
+	async function dropZoneCallback(acceptedFiles) {
+		const currentFontFiles = await requestFilesFromDropzone(acceptedFiles);
+		setFontFiles(currentFontFiles);
+	}
+
+	// console.log(fontFilesByGroup.keys());
 
 	return (
 		<FontControlProvider>
-			<div className="p-4 relative">
-				<button
-					onClick={requestDirectory}
-					className="bg-gray-200 p-4 rounded-lg border border-gray-400"
-					type="button"
+			<div className="p-4 relative bg-gray-900 text-white">
+				<DropZone
+					callback={dropZoneCallback}
+					className="rounded-3xl border border-dashed p-4 py-10 text-center border-gray-700 bg-gray-800"
 				>
-					Open Font Directory
-				</button>
-				<div className="sticky top-0 bg-white">
+					Drag and drop your font folder here or click here to select your font
+					folder.
+				</DropZone>
+				<div className="sticky top-0">
 					<TextInput />
 				</div>
 				{[...fontFilesByGroup.keys()]
