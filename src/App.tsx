@@ -71,23 +71,32 @@ function App() {
 
 	React.useEffect(() => {
 		// Install woff2 dependency
-		const loadScript = (src) =>
-			new Promise((onload) =>
-				document.documentElement.append(
+		const loadScript = (src) => {
+			return new Promise((onload) => {
+				console.log(src);
+				document.body.append(
 					Object.assign(document.createElement("script"), { src, onload }),
-				),
-			);
+				);
+			});
+		};
+		console.log("hello");
 		async function installWOFF2Dependency() {
+			console.log(window.Module);
 			if (!window.Module) {
 				const path =
 					"https://unpkg.com/wawoff2@2.0.1/build/decompress_binding.js";
 				const init = new Promise(
 					(done) => (window.Module = { onRuntimeInitialized: done }),
 				);
-				await loadScript(path).then(() => {
-					init;
-					return;
-				});
+				await loadScript(path)
+					.then(() => init)
+					.then(() => {
+						console.log("WOFF2 decompression loaded");
+						loadFromPersistent();
+					})
+					.catch((err) => {
+						console.error(err);
+					});
 			}
 		}
 		async function loadFromPersistent() {
@@ -106,10 +115,7 @@ function App() {
 			const currentFontFiles = await convertFilesToFontObjects(fonts);
 			setFontFiles(currentFontFiles);
 		}
-		return async () => {
-			await installWOFF2Dependency();
-			await loadFromPersistent();
-		};
+		installWOFF2Dependency();
 	}, []);
 
 	const toBase64 = (file) =>
