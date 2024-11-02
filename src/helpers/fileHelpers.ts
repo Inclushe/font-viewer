@@ -38,7 +38,11 @@ export async function createFontObjectFromFile(file : File) {
 	};
 }
 
-export async function requestFilesFromDropzone(files : File[]) {
+// export async function convertBlobToFontObject(blob) {
+// 	fetch(blob)
+// }
+
+export async function convertFilesToFontObjects(files : File[]) {
 	const currentFontFiles = [];
 	for (const file of files) {
 		const currentFontFileObject = await createFontObjectFromFile(file);

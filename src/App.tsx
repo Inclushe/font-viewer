@@ -8,8 +8,11 @@ import TextInput from "./components/TextInput";
 import DropZone from "./components/DropZone";
 import {
 	requestDirectoryFS,
-	requestFilesFromDropzone,
+	convertFilesToFontObjects,
 } from "./helpers/fileHelpers";
+import { createIndexedDbPersister } from "tinybase/persisters/persister-indexed-db";
+import { createStore } from "tinybase";
+import { useRow, useTable } from "tinybase/ui-react";
 
 const SUPPORTED_FILE_TYPES = ["ttf", "otf", "woff", "woff2"];
 
@@ -28,8 +31,12 @@ const SUPPORTED_FILE_TYPES = ["ttf", "otf", "woff", "woff2"];
 	- https://developer.mozilla.org/en-US/docs/Web/API/CSS_Font_Loading_API
 */
 
+const store = createStore().setTables({ fonts: null });
+const persister = createIndexedDbPersister(store, "fonts");
+
 function App() {
 	const [fontFiles, setFontFiles] = React.useState([]);
+	const fontFilesTable = useTable("fonts", store);
 	// Group fonts by family name under font.opentype.names.fontFamily
 	let fontFilesByGroup = new Map();
 	for (const fontFile of fontFiles) {
@@ -85,13 +92,54 @@ function App() {
 		installWOFF2Dependency();
 	}, []);
 
-	async function requestDirectory() {
-		const currentFontFiles = await requestDirectoryFS();
-		setFontFiles(currentFontFiles);
-	}
+	React.useEffect(() => {
+		return async () => {
+			await persister.load();
+			console.log(store.getTables());
+			let fonts = [];
+			for (const rowID of store.getRowIds("fonts")) {
+				const fileBase64 = store.getCell("fonts", rowID, "fileBase64");
+				const fileName = store.getCell("fonts", rowID, "name");
+				const fileType = store.getCell("fonts", rowID, "fontType");
+				const res = await fetch(fileBase64);
+				const blob = await res.blob();
+				const file = new File([blob], fileName, { type: fileType });
+				fonts.push(file);
+			}
+			const currentFontFiles = await convertFilesToFontObjects(fonts);
+			setFontFiles(currentFontFiles);
+		};
+	}, []);
+
+	const toBase64 = (file) =>
+		new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.readAsDataURL(file);
+			reader.onload = () => resolve(reader.result);
+			reader.onerror = reject;
+		});
 
 	async function dropZoneCallback(acceptedFiles) {
-		const currentFontFiles = await requestFilesFromDropzone(acceptedFiles);
+		const currentFontFiles = await convertFilesToFontObjects(acceptedFiles);
+		for (const currentFontFile of currentFontFiles) {
+			console.log(currentFontFile.file);
+			const fileBase64 = await toBase64(currentFontFile.file);
+			console.log(fileBase64);
+			store.transaction(() => {
+				const fontID = crypto.randomUUID();
+				store.setCell("fonts", fontID, "fileBase64", fileBase64);
+				store.setCell("fonts", fontID, "name", currentFontFile.name);
+				store.setCell("fonts", fontID, "fontType", currentFontFile.file.type);
+			});
+		}
+		const tableIds = store.getRowIds("fonts");
+		console.log(store.getRow("fonts", tableIds[0]));
+		// const fileBlob = store.getCell("fonts", tableIds[0], "fileBlob");
+		// const fileName = store.getCell("fonts", tableIds[0], "name");
+		// const response = await fetch()
+		// const newFile = new File([await (await fetch(fileBlob)).blob()], fileName);
+		// console.log(newFile);
+		await persister.save();
 		setFontFiles(currentFontFiles);
 	}
 
