@@ -86,14 +86,11 @@ function App() {
 				);
 				await loadScript(path).then(() => {
 					init;
+					return;
 				});
 			}
 		}
-		installWOFF2Dependency();
-	}, []);
-
-	React.useEffect(() => {
-		return async () => {
+		async function loadFromPersistent() {
 			await persister.load();
 			console.log(store.getTables());
 			let fonts = [];
@@ -108,6 +105,10 @@ function App() {
 			}
 			const currentFontFiles = await convertFilesToFontObjects(fonts);
 			setFontFiles(currentFontFiles);
+		}
+		return async () => {
+			await installWOFF2Dependency();
+			await loadFromPersistent();
 		};
 	}, []);
 
