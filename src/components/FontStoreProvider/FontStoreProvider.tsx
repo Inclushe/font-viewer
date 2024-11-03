@@ -1,40 +1,46 @@
 import * as React from "react";
 
-export const FontStoreContext = React.createContext(null);
-
 import { createStore } from "tinybase";
 import { createIndexedDbPersister } from "tinybase/persisters/persister-indexed-db";
 import { useCreateStore, useCreatePersister } from "tinybase/ui-react";
+import {
+	createOpentypeObjectFromFile,
+	installWOFF2Dependency,
+	loadFileFromBase64,
+} from "../../helpers/fileHelpers";
+
+export const FontStoreContext = React.createContext(null);
 
 import opentype from "opentype.js";
 
 export const SUPPORTED_FILE_TYPES = ["ttf", "otf", "woff", "woff2"];
 
 function FontStoreProvider({ children }) {
-	const store = useCreateStore(() => {
+	const store = useCreateStore<Store>(() => {
 		return createStore().setTables({ fonts: null });
 	});
 	const [opentypeDefinitions, setOpentypeDefinitions] = React.useState({});
 
-	async function createOpentypeDefinition(id, file) {
-		const fileType = file.name.split(".").pop()?.toLocaleLowerCase();
-		if (!SUPPORTED_FILE_TYPES.includes(fileType)) {
-			return null;
-		}
-		let font = null;
-		if (fileType === "woff2") {
-			const fileBuffer = await file.arrayBuffer();
-			font = opentype.parse(
-				Uint8Array.from(Module.decompress(fileBuffer)).buffer,
-			);
-		} else {
-			font = opentype.parse(await file.arrayBuffer());
-		}
+	// Load WOFF2 dependency first and only once
+	const WOFF2Dependency = React.useMemo(() => {
+		return installWOFF2Dependency();
+	}, []);
+
+	async function createOpentypeDefinition(id) {
+		const base64 = store.getCell("fonts", id, "fileBase64");
+		const name = store.getCell("fonts", id, "name");
+		const type = store.getCell("fonts", id, "fontType");
+		const file = await loadFileFromBase64({ base64, name, type });
+		return await createOpentypeDefinitionFromFile(file, id);
+	}
+
+	async function createOpentypeDefinitionFromFile(file: File, id: string) {
+		const opentypeDefinition = await createOpentypeObjectFromFile(file);
 		setOpentypeDefinitions((prevState) => ({
 			...prevState,
-			[id]: font,
+			[id]: opentypeDefinition,
 		}));
-		return font;
+		return opentypeDefinition;
 	}
 
 	useCreatePersister(
@@ -50,7 +56,12 @@ function FontStoreProvider({ children }) {
 	);
 
 	const value = React.useMemo(
-		() => ({ store, opentypeDefinitions, createOpentypeDefinition }),
+		() => ({
+			store,
+			opentypeDefinitions,
+			createOpentypeDefinition,
+			createOpentypeDefinitionFromFile,
+		}),
 		[store, opentypeDefinitions],
 	);
 

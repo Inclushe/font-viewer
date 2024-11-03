@@ -5,67 +5,35 @@ import { FontStoreContext } from "./components/FontStoreProvider";
 import FontGroup from "./components/FontGroup";
 import TextInput from "./components/TextInput";
 import DropZone from "./components/DropZone";
-import { convertFilesToFontObjects } from "./helpers/fileHelpers";
+import {
+	convertFilesToFontObjects,
+	installWOFF2Dependency,
+	SUPPORTED_FILE_TYPES,
+} from "./helpers/fileHelpers";
+import { useRowIds } from "tinybase/ui-react";
 
 function App() {
-	const [fontFiles, setFontFiles] = React.useState([]);
-	const { store } = React.useContext(FontStoreContext);
+	const { store, createOpentypeDefinition, createOpentypeDefinitionFromFile } =
+		React.useContext(FontStoreContext);
+	const rowIds = useRowIds("fonts", store);
+
+	// Load WOFF2 dependency first and only once
+	const WOFF2Dependency = React.useMemo(() => {
+		return installWOFF2Dependency();
+	}, []);
+
 	// Group fonts by family name under font.opentype.names.fontFamily
 	let fontFilesByGroup = new Map();
-	for (const fontFile of fontFiles) {
-		const fontFamily = fontFile.opentype?.names?.fontFamily?.en;
+	for (const rowID of rowIds) {
+		const fontFamily = store.getCell("fonts", rowID, "fontFamily");
 		if (!fontFilesByGroup.has(fontFamily)) {
 			fontFilesByGroup.set(fontFamily, []);
 		}
-		fontFilesByGroup.get(fontFamily).push(fontFile);
+		fontFilesByGroup.get(fontFamily).push(rowID);
 	}
+	console.log(fontFilesByGroup);
 
-	React.useEffect(() => {
-		// Install woff2 dependency
-		const loadScript = (src) => {
-			return new Promise((onload) => {
-				document.body.append(
-					Object.assign(document.createElement("script"), { src, onload }),
-				);
-			});
-		};
-		async function installWOFF2Dependency() {
-			if (!window.Module) {
-				const path =
-					"https://unpkg.com/wawoff2@2.0.1/build/decompress_binding.js";
-				const init = new Promise(
-					(done) => (window.Module = { onRuntimeInitialized: done }),
-				);
-				await loadScript(path)
-					.then(() => init)
-					.then(() => {
-						console.log("WOFF2 decompression library loaded");
-						loadFromPersistent();
-					})
-					.catch((err) => {
-						console.error(err);
-					});
-			}
-		}
-		async function loadFromPersistent() {
-			console.log(store.getTables());
-			let fonts = [];
-			for (const rowID of store.getRowIds("fonts")) {
-				const fileBase64 = store.getCell("fonts", rowID, "fileBase64");
-				const fileName = store.getCell("fonts", rowID, "name");
-				const fileType = store.getCell("fonts", rowID, "fontType");
-				const res = await fetch(fileBase64);
-				const blob = await res.blob();
-				const file = new File([blob], fileName, { type: fileType });
-				fonts.push(file);
-			}
-			const currentFontFiles = await convertFilesToFontObjects(fonts);
-			setFontFiles(currentFontFiles);
-		}
-		installWOFF2Dependency();
-	}, []);
-
-	const toBase64 = (file) =>
+	const toBase64 = (file: File) =>
 		new Promise((resolve, reject) => {
 			const reader = new FileReader();
 			reader.readAsDataURL(file);
@@ -73,30 +41,47 @@ function App() {
 			reader.onerror = reject;
 		});
 
-	async function dropZoneCallback(acceptedFiles) {
-		const currentFontFiles = await convertFilesToFontObjects(acceptedFiles);
-		for (const currentFontFile of currentFontFiles) {
-			const fileBase64 = await toBase64(currentFontFile.file);
-			store.transaction(() => {
-				const fontID = crypto.randomUUID();
-				store.setCell("fonts", fontID, "fileBase64", fileBase64);
-				store.setCell("fonts", fontID, "name", currentFontFile.name);
-				store.setCell("fonts", fontID, "fontType", currentFontFile.file.type);
-				store.setCell(
-					"fonts",
-					fontID,
-					"fontFamily",
-					currentFontFile.opentype?.names?.fontFamily?.en,
-				);
-				store.setCell(
-					"fonts",
-					fontID,
-					"fontSubfamily",
-					currentFontFile.opentype?.names?.fontSubfamily?.en,
-				);
-			});
+	async function dropZoneCallback(acceptedFiles: File[]) {
+		const fonts = {};
+		for (const file of acceptedFiles) {
+			const fileExtension = file.name.split(".").pop()?.toLocaleLowerCase();
+			if (!SUPPORTED_FILE_TYPES.includes(fileExtension)) {
+				continue;
+			}
+			const fontID = crypto.randomUUID();
+			const opentypeDefinition = await createOpentypeDefinitionFromFile(
+				file,
+				fontID,
+			);
+			const fileBase64 = await toBase64(file);
+			fonts[fontID] = {
+				fileBase64,
+				name: file.name,
+				type: file.type,
+				opentypeDefinition,
+			};
 		}
-		setFontFiles(currentFontFiles);
+		store.transaction(() => {
+			for (const [fontID, currentFont] of Object.entries(fonts)) {
+				store.transaction(() => {
+					store.setCell("fonts", fontID, "fileBase64", currentFont.fileBase64);
+					store.setCell("fonts", fontID, "name", currentFont.name);
+					store.setCell("fonts", fontID, "fontType", currentFont.type);
+					store.setCell(
+						"fonts",
+						fontID,
+						"fontFamily",
+						currentFont.opentypeDefinition?.names?.fontFamily?.en,
+					);
+					store.setCell(
+						"fonts",
+						fontID,
+						"fontSubfamily",
+						currentFont.opentypeDefinition?.names?.fontSubfamily?.en,
+					);
+				});
+			}
+		});
 	}
 
 	// console.log(fontFilesByGroup.keys());
@@ -119,8 +104,8 @@ function App() {
 					.map((fontFamily) => (
 						<FontGroup
 							fontName={fontFamily}
-							fontFiles={fontFilesByGroup.get(fontFamily)}
-							key={fontFamily}
+							ids={fontFilesByGroup.get(fontFamily)}
+							key={`${fontFamily}-${fontFilesByGroup.get(fontFamily)[0]}`}
 						/>
 					))}
 			</div>
