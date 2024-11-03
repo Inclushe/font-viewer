@@ -103,19 +103,19 @@ export async function createOpentypeObjectFromFile(file : File) {
 }
 
 export async function installWOFF2Dependency() {
-	if (!window.Module) {
-		const path =
-			"https://unpkg.com/wawoff2@2.0.1/build/decompress_binding.js";
-		const init = new Promise(
-			(done) => (window.Module = { onRuntimeInitialized: done }),
-		);
-		await loadScript(path)
-			.then(() => init)
-			.then(() => {
-				return;
-			})
-			.catch((err) => {
-				console.error(err);
-			});
-	}
+	// if (!window.Module) {
+	// 	const path =
+	// 		"https://unpkg.com/wawoff2@2.0.1/build/decompress_binding.js";
+	// 	const init = new Promise(
+	// 		(done) => (window.Module = { onRuntimeInitialized: done }),
+	// 	);
+	// 	await loadScript(path)
+	// 		.then(() => init)
+	// 		.then(() => {
+	// 			return;
+	// 		})
+	// 		.catch((err) => {
+	// 			console.error(err);
+	// 		});
+	// }
 }
